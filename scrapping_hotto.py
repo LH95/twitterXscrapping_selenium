@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import time
 import pandas as pd
 
-# ========== Input Manual ==========
+# ========== Input ==========
 start_date = input("Tanggal mulai (YYYY-MM-DD): ")
 end_date = input("Tanggal akhir (YYYY-MM-DD): ")
 keywords_input = input("Kata kunci (pisahkan dengan koma): ")
@@ -23,7 +23,7 @@ options.add_argument('--disable-dev-shm-usage')
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-# ========== Login Manual ==========
+# ========== Manual Login ==========
 print("🌐 Silakan login ke Twitter, lalu tekan ENTER jika sudah selesai login...")
 driver.get("https://twitter.com/login")
 input("✅ Tekan ENTER jika kamu sudah login: ")
@@ -40,8 +40,23 @@ for keyword in keywords:
     time.sleep(4)
 
     seen_urls = set()
-    for _ in range(35):  # scroll 25x
+    stable_scroll = 0
+    last_seen = 0
+
+    for i in range(80):  # jumlah scroll
         tweets = driver.find_elements(By.XPATH, '//article[@role="article"]')
+        print(f"📄 Scroll {i+1} | Tweet terlihat: {len(tweets)} | Total unik: {len(seen_urls)}")
+
+        if len(seen_urls) == last_seen:
+            stable_scroll += 1
+        else:
+            stable_scroll = 0
+            last_seen = len(seen_urls)
+
+        if stable_scroll >= 4:
+            print("⚠️ Tidak ada tweet baru ditemukan setelah beberapa scroll. Berhenti.")
+            break
+
         for tweet in tweets:
             try:
                 tweet_url = tweet.find_element(By.XPATH, './/time/parent::a').get_attribute("href")
@@ -51,60 +66,63 @@ for keyword in keywords:
 
                 time_posted = tweet.find_element(By.XPATH, './/time').get_attribute("datetime")
                 created_at = datetime.fromisoformat(time_posted.replace("Z", "+00:00")) + timedelta(hours=7)
-
                 id_str = tweet_url.split("/")[-1]
 
-                # Full Text
+                # Ambil hanya isi tweet, bukan semua text
                 try:
-                    full_text = tweet.find_element(By.XPATH, './/div[@data-testid="tweetText"]').text
+                    full_text = tweet.find_element(By.XPATH, './/div[@data-testid="tweetText"]').text.strip()
                 except:
                     full_text = ''
 
-                # Username
+                lines = tweet.text.splitlines()
+
                 try:
                     username = tweet.find_element(By.XPATH, './/div[@data-testid="User-Name"]//span[contains(text(), "@")]').text
                 except:
                     username = ''
 
-                # Bahasa
                 try:
                     lang = detect(full_text)
                 except:
                     lang = 'und'
 
-                # Sentimen
                 try:
                     polarity = TextBlob(full_text).sentiment.polarity
-                    sentiment = 'Positif' if polarity > 0 else 'Negatif' if polarity < 0 else 'Netral'
+                    sentiment = 'Positif' if polarity >= 0 else 'Negatif'
                 except:
-                    sentiment = 'Tidak Terdeteksi'
+                    sentiment = 'Positif'  # default jika error
 
-                # Hitungan like/retweet/reply
-                def get_count(testid):
+                def parse_number(text):
+                    text = text.strip()
+                    if 'K' in text:
+                        return int(float(text.replace('K', '').replace(',', '.')) * 1000)
+                    elif 'M' in text:
+                        return int(float(text.replace('M', '').replace(',', '.')) * 1000000)
                     try:
-                        el = tweet.find_element(By.XPATH, f'.//div[@data-testid="{testid}"]')
-                        count_text = el.text.strip()
-                        if count_text == '':
-                            return 0
-                        if 'K' in count_text:
-                            return int(float(count_text.replace('K', '')) * 1000)
-                        if 'M' in count_text:
-                            return int(float(count_text.replace('M', '')) * 1000000)
-                        return int(count_text.replace(',', ''))
+                        return int(text.replace(',', ''))
                     except:
                         return 0
 
-                like = get_count("like")
-                retweet = get_count("retweet")
-                reply = get_count("reply")
+                reply = retweet = like = view = 0
+                try:
+                    numbers = lines[-4:]
+                    numbers = [parse_number(n) for n in numbers if n.strip() and any(c.isdigit() for c in n)]
+                    if len(numbers) == 4:
+                        reply, retweet, like, view = numbers
+                    elif len(numbers) == 3:
+                        reply, retweet, like = numbers
+                    elif len(numbers) == 2:
+                        reply, retweet = numbers
+                    elif len(numbers) == 1:
+                        reply = numbers[0]
+                except:
+                    pass
 
-                # Gambar
                 try:
                     image_url = tweet.find_element(By.XPATH, './/img[contains(@src,"pbs.twimg.com/media")]').get_attribute("src")
                 except:
                     image_url = ''
 
-                # Simpan data
                 all_data.append({
                     'keyword': keyword,
                     'id_str': id_str,
@@ -114,17 +132,18 @@ for keyword in keywords:
                     'favorite_count': like,
                     'retweet_count': retweet,
                     'reply_count': reply,
-                    'quote_count': '',  # Tidak bisa diakses dari UI langsung
+                    'view_count': view,
                     'image_url': image_url,
                     'tweet_url': tweet_url,
                     'username': username,
                     'lang': lang
                 })
             except Exception as e:
+                print("❌ Error parsing tweet:", e)
                 continue
 
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(3)
+        time.sleep(5)
 
 driver.quit()
 
