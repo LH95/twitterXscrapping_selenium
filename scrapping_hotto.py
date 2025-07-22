@@ -8,11 +8,12 @@ from textblob import TextBlob
 from datetime import datetime, timedelta
 import time
 import pandas as pd
+import random
 
 # ========== Input ==========
-start_date = input("Tanggal mulai (YYYY-MM-DD): ")
-end_date = input("Tanggal akhir (YYYY-MM-DD): ")
-keywords_input = input("Kata kunci (pisahkan dengan koma): ")
+start_date = input("開始日期 (2025-07-01):")
+end_date = input("結束日期 (YYYY-MM-DD):")
+keywords_input = input("關鍵字 (用逗號分隔): bitcoin,BTC,blockchain")
 keywords = [kw.strip() for kw in keywords_input.split(",")]
 
 # ========== Setup Chrome ==========
@@ -24,26 +25,26 @@ options.add_argument('--disable-dev-shm-usage')
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 # ========== Manual Login ==========
-print("🌐 Silakan login ke Twitter, lalu tekan ENTER jika sudah selesai login...")
+print("🌐 請登入 Twitter，登入完成後按 ENTER...")
 driver.get("https://twitter.com/login")
-input("✅ Tekan ENTER jika kamu sudah login: ")
+input("✅ 如果您已經登入，請按 ENTER 鍵： ")
 
 # ========== Scraping ==========
 all_data = []
 
 for keyword in keywords:
     print(f"\n🔍 Scraping: {keyword}")
-    query = f'"{keyword}" since:{start_date} until:{end_date}'
+    query = f'{keyword} until:{end_date} since:{start_date}'
     search_url = f"https://twitter.com/search?q={quote(query)}&src=typed_query&f=live"
 
     driver.get(search_url)
-    time.sleep(4)
+    time.sleep(10)
 
     seen_urls = set()
     stable_scroll = 0
     last_seen = 0
 
-    for i in range(80):  # jumlah scroll
+    for i in range(100):  # jumlah scroll
         tweets = driver.find_elements(By.XPATH, '//article[@role="article"]')
         print(f"📄 Scroll {i+1} | Tweet terlihat: {len(tweets)} | Total unik: {len(seen_urls)}")
 
@@ -143,7 +144,7 @@ for keyword in keywords:
                 continue
 
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(5)
+        time.sleep(random.uniform(5, 10))  # 用隨機時間代替固定等待
 
 driver.quit()
 
